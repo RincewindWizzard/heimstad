@@ -1,94 +1,96 @@
+use std::fmt::{Debug, Display, Formatter};
+use std::sync::Arc;
 use std::time::Duration;
-use anyhow::Error;
-use tokio::sync::broadcast;
+use anyhow::{anyhow, Error};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-use futures::sink::Sink;
-use futures::SinkExt;
-use futures::stream::Stream;
 
-struct Actor<MessageIn, MessageOut> {
-    input: dyn Stream<Item=MessageIn>,
-    output: dyn Sink<MessageOut, Error=anyhow::Error>,
+pub trait Message: Display + Send + Sync + std::fmt::Debug + Clone {}
+
+#[async_trait]
+pub trait Sender<Item>: Send + Sync
+    where
+        Item: Message
+{
+    /// The type of value produced by the sink when an error occurs.
+    type Error;
+
+    async fn send(&self, msg: &Item) -> Result<(), Self::Error>;
 }
 
-
-pub trait Runnable<R, E> {
-    async fn run(&mut self) -> Result<R, E>;
+// Define the TimerActor with a generic Sender
+struct TimerActor<S>
+    where
+        S: Sender<i64, Error=Error>,
+{
+    output: Arc<S>,
 }
 
-struct TimerActor {
-    output: dyn Sink<DateTime<Utc>, Error=anyhow::Error>,
-}
+impl<S> TimerActor<S>
+    where
+        S: Sender<i64, Error=Error> + Send + Sync,
+{
+    pub fn new(output: Arc<S>) -> Self {
+        TimerActor { output }
+    }
 
-impl Runnable<(), anyhow::Error> for TimerActor {
-    async fn run(&mut self) -> Result<(), Error> {
+    pub async fn run(&self) -> Result<(), anyhow::Error> {
+        let i = 0;
         loop {
-            self.output.send(DateTime::now()).await?;
+            let i = i + 1;
+            self.output.send(&i).await?;
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
-        Ok(())
     }
 }
+
+// Example implementation of a concrete Sender
+struct ConsoleSender {
+    closed: bool,
+}
+
+
+impl<T> Message for T
+    where
+        T: Display + Send + Sync + Debug + Clone
+{}
 
 
 #[async_trait]
-pub trait MessageSocket {
-    type MessageIn;
+impl<M: Message> Sender<M> for ConsoleSender {
+    type Error = Error;
 
-    type MessageOut;
-
-    async fn read(&self) -> Self::MessageIn;
-    async fn write(&self, msg: Self::MessageOut);
+    async fn send(&self, msg: &M) -> Result<(), Self::Error> {
+        if self.closed {
+            Err(anyhow!("Closed"))
+        } else {
+            println!("Sent {}", msg);
+            Ok(())
+        }
+    }
 }
+
 
 #[cfg(test)]
 mod tests {
+    use futures::AsyncWriteExt;
     use super::*;
     use tokio;
-
-    struct SimpleMessageSocket {}
-
-    #[async_trait]
-    impl MessageSocket for SimpleMessageSocket {
-        type MessageIn = &'static str;
-        type MessageOut = &'static str;
-
-        async fn read(&self) -> Self::MessageIn {
-            "success"
-        }
-
-        async fn write(&self, msg: Self::MessageOut) {}
-    }
-
-    #[tokio::test]
-    async fn test_message_socket() {
-        let socket = SimpleMessageSocket {};
-        socket.write("").await;
-        let result = socket.read().await;
-
-        assert_eq!("success", result);
-    }
-
+    use tokio::sync::broadcast;
 
 
     #[tokio::test]
-    async fn test_broadcast() {
-        let (tx, mut rx1) = broadcast::channel(16);
-        let mut rx2 = tx.subscribe();
+    async fn test_timer_actor() -> Result<(), anyhow::Error> {
+        let sender = Arc::new(ConsoleSender { closed: false });
+        let actor = TimerActor::new(sender.clone());
 
-        tokio::spawn(async move {
-            assert_eq!(rx1.recv().await.unwrap(), 10);
-            assert_eq!(rx1.recv().await.unwrap(), 20);
+        let handle = tokio::spawn(async move {
+            actor.run().await.expect("Foo")
         });
 
-        tokio::spawn(async move {
-            assert_eq!(rx2.recv().await.unwrap(), 10);
-            assert_eq!(rx2.recv().await.unwrap(), 20);
-        });
-
-        tx.send(10).unwrap();
-        tx.send(20).unwrap();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        handle.await?;
+        Ok(())
     }
 }
