@@ -1,0 +1,16 @@
+[package]
+name = "heimstad"
+version = "0.1.0"
+edition = "2021"
+description = "A kiss Smarthome Daemon for your mqtt broker."
+authors = ["RincewindWizzard <git@magierdinge.de>"]
+license = "LGPL-2"
+
+[package.metadata.deb]
+
+
+[dependencies]
+clap = { version = "4.5.4", features = ["derive"] }
+clap-verbosity-flag = "2.2.0"
+log = "0.4.21"
+stderrlog = "0.6.0"

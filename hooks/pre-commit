@@ -1,0 +1,8 @@
+#!/bin/bash
+# Bumps the version in Cargo.toml before committing
+# You need to have cargo-bump installed:
+#
+#   cargo install cargo-bump
+
+cargo bump
+git add Cargo.toml  Cargo.lock

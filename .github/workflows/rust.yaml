@@ -1,0 +1,41 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust Build DEB PPA
+        uses: RincewindWizzard/rust-build-action@v16
+        with:
+          gpg_private_key: "${{ secrets.GPG_PRIVATE_KEY }}"
+          email: "git@magierdinge.de"
+
+      - name: Archive Debian Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build Artefacts
+          path: ./target/
+
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: './target/gh-pages/'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2
