@@ -6,6 +6,7 @@ use anyhow::{anyhow, Error};
 use async_trait::async_trait;
 use serde::{Serialize};
 use serde::de::DeserializeOwned;
+use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use crate::actor;
 
@@ -45,6 +46,29 @@ pub trait Receiver<Msg>: Send + Sync
 
     /// Send a message to the receiving side.
     async fn recv(&mut self) -> Result<Msg, Self::Error>;
+}
+
+#[async_trait]
+impl<M> Sender<M> for broadcast::Sender<M>
+    where M: Message
+{
+    type Error = tokio::sync::broadcast::error::SendError<M>;
+
+    async fn send(&mut self, msg: &M) -> Result<(), Self::Error> {
+        self.send(msg).await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl<M> Receiver<M> for broadcast::Receiver<M>
+    where M: Message
+{
+    type Error = tokio::sync::broadcast::error::RecvError;
+
+    async fn recv(&mut self) -> Result<M, Self::Error> {
+        Ok(self.recv().await?)
+    }
 }
 
 
@@ -174,5 +198,23 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(2)).await;
         handle.await?;
         Ok(())
+    }
+
+    async fn test_broadcast() {
+        let (tx, mut rx1) = broadcast::channel(16);
+        let mut rx2 = tx.subscribe();
+
+        tokio::spawn(async move {
+            assert_eq!(rx1.recv().await.unwrap(), 10);
+            assert_eq!(rx1.recv().await.unwrap(), 20);
+        });
+
+        tokio::spawn(async move {
+            assert_eq!(rx2.recv().await.unwrap(), 10);
+            assert_eq!(rx2.recv().await.unwrap(), 20);
+        });
+
+        tx.send(10).unwrap();
+        tx.send(20).unwrap();
     }
 }
