@@ -6,6 +6,8 @@ backend and some time series database for logging. (Might be PostgreSQL)
 
 Features will include what I need and what I like.
 
+See also the [Documentation](https://rincewindwizzard.github.io/heimstad/heimstad/index.html).
+
 # Installation
 
 Installation should be easy
