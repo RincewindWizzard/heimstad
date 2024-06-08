@@ -16,7 +16,7 @@ pub trait Sender<Item>: Send + Sync
     /// The type of value produced by the sink when an error occurs.
     type Error;
 
-    async fn send(&self, msg: &Item) -> Result<(), Self::Error>;
+    async fn send(&mut self, msg: &Item) -> Result<(), Self::Error>;
 }
 
 // Define the TimerActor with a generic Sender
@@ -35,7 +35,7 @@ impl<S> TimerActor<S>
         TimerActor { output }
     }
 
-    pub async fn run(&self) -> Result<(), anyhow::Error> {
+    pub async fn run(&mut self) -> Result<(), anyhow::Error> {
         let i = 0;
         loop {
             let i = i + 1;
@@ -47,7 +47,7 @@ impl<S> TimerActor<S>
 
 // Example implementation of a concrete Sender
 struct ConsoleSender {
-    closed: bool,
+    capacity: usize,
 }
 
 
@@ -61,8 +61,9 @@ impl<T> Message for T
 impl<M: Message> Sender<M> for ConsoleSender {
     type Error = Error;
 
-    async fn send(&self, msg: &M) -> Result<(), Self::Error> {
-        if self.closed {
+    async fn send(&mut self, msg: &M) -> Result<(), Self::Error> {
+        self.capacity = if self.capacity > 0 { self.capacity - 1 } else { 0 };
+        if self.capacity == 0 {
             Err(anyhow!("Closed"))
         } else {
             println!("Sent {}", msg);
@@ -82,8 +83,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_timer_actor() -> Result<(), anyhow::Error> {
-        let sender = Arc::new(ConsoleSender { closed: false });
-        let actor = TimerActor::new(sender.clone());
+        let sender = Arc::new(ConsoleSender { capacity: 3 });
+        let mut actor = TimerActor::new(sender.clone());
 
         let handle = tokio::spawn(async move {
             actor.run().await.expect("Foo")
