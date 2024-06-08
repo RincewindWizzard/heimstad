@@ -1,3 +1,9 @@
+#![doc = include_str!("../README.md")]
+
+
+mod actor;
+mod mqtt;
+
 use clap::Parser;
 use log::{debug, info, Level};
 
@@ -10,7 +16,8 @@ struct Args {
     verbose: clap_verbosity_flag::Verbosity,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Args::parse();
 
     stderrlog::new()
