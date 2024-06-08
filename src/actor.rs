@@ -1,9 +1,13 @@
 use std::fmt::{Debug};
+use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 use anyhow::{anyhow, Error};
 use async_trait::async_trait;
 use serde::{Serialize};
 use serde::de::DeserializeOwned;
+use tokio::task::JoinHandle;
+use crate::actor;
 
 
 /// This represents a Message to be sent across wires.
@@ -29,6 +33,69 @@ pub trait Sender<Msg>: Send + Sync
     /// Send a message to the receiving side.
     async fn send(&mut self, msg: &Msg) -> Result<(), Self::Error>;
 }
+
+
+#[async_trait]
+pub trait Receiver<Msg>: Send + Sync
+    where
+        Msg: Message
+{
+    /// The type of value produced by the receiver when an error occurs.
+    type Error;
+
+    /// Send a message to the receiving side.
+    async fn recv(&mut self) -> Result<Msg, Self::Error>;
+}
+
+
+#[async_trait]
+pub trait Actor: Send + Sync {
+    type Error: Send;
+
+    async fn run(mut self) -> Result<(), Self::Error>;
+
+    async fn start(self) -> JoinHandle<Pin<Box<dyn Future<Output=Result<(), Self::Error>> + Send>>>
+        where
+            Self: Sized + 'static
+    {
+        tokio::spawn(async move {
+            Box::pin(self.run()) as Pin<Box<dyn Future<Output=Result<(), Self::Error>> + Send>>
+        })
+    }
+}
+
+pub struct SquareActor<R, S>
+    where
+        S: Sender<i64, Error=Error>,
+        R: Receiver<i64, Error=Error>,
+{
+    source: R,
+    sink: S,
+}
+
+#[async_trait]
+impl<R, S> Actor for SquareActor<R, S>
+    where
+        S: Sender<i64, Error=Error>,
+        R: Receiver<i64, Error=Error>,
+{
+    type Error = anyhow::Error;
+
+    async fn run(mut self) -> Result<(), Self::Error> {
+        loop {
+            let input = self.source.recv().await?;
+            let output = input * input;
+            self.sink.send(&output).await?;
+        }
+    }
+}
+
+impl<R, S> SquareActor<R, S>
+    where
+        S: Sender<i64, Error=Error>,
+        R: Receiver<i64, Error=Error>,
+{}
+
 
 /// A sample actor which sends messages a regular intervals
 pub struct TimerActor<S>
