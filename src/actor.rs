@@ -24,23 +24,23 @@ struct TimerActor<S>
     where
         S: Sender<i64, Error=Error>,
 {
-    output: Arc<S>,
+    sink: S,
 }
 
 impl<S> TimerActor<S>
     where
         S: Sender<i64, Error=Error> + Send + Sync,
 {
-    pub fn new(output: Arc<S>) -> Self {
-        TimerActor { output }
+    pub fn new(sink: S) -> Self {
+        TimerActor { sink }
     }
 
     pub async fn run(&mut self) -> Result<(), anyhow::Error> {
-        let i = 0;
+        let mut i = 0;
         loop {
-            let i = i + 1;
-            self.output.send(&i).await?;
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            i = i + 1;
+            self.sink.send(&i).await?;
+            tokio::time::sleep(Duration::from_millis(1)).await;
         }
     }
 }
@@ -76,6 +76,7 @@ impl<M: Message> Sender<M> for ConsoleSender {
 #[cfg(test)]
 mod tests {
     use futures::AsyncWriteExt;
+    use log::info;
     use super::*;
     use tokio;
     use tokio::sync::broadcast;
@@ -83,11 +84,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_timer_actor() -> Result<(), anyhow::Error> {
-        let sender = Arc::new(ConsoleSender { capacity: 3 });
-        let mut actor = TimerActor::new(sender.clone());
+        let sender = ConsoleSender { capacity: 10 };
+        let mut actor = TimerActor::new(sender);
 
         let handle = tokio::spawn(async move {
-            actor.run().await.expect("Foo")
+            let result = actor.run().await;
+
+            if let Err(e) = result {
+                info!("Closed sender with {:?}", e);
+            }
         });
 
         tokio::time::sleep(Duration::from_secs(2)).await;
