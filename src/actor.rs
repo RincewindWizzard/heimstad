@@ -1,38 +1,53 @@
-use std::fmt::{Debug, Display, Formatter};
-use std::sync::Arc;
+use std::fmt::{Debug};
 use std::time::Duration;
 use anyhow::{anyhow, Error};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use serde::{Serialize};
+use serde::de::DeserializeOwned;
 
 
-pub trait Message: Display + Send + Sync + std::fmt::Debug + Clone {}
+/// This represents a Message to be sent across wires.
+pub trait Message: Send + Sync + std::fmt::Debug + Clone + Serialize + DeserializeOwned {}
 
-#[async_trait]
-pub trait Sender<Item>: Send + Sync
+
+/// Messages can be everything that has the traits that we expect from messages.
+impl<T> Message for T
     where
-        Item: Message
+        T: Send + Sync + Debug + Clone + Serialize + DeserializeOwned
+{}
+
+
+/// The sender consumes messages and sends them to another actor or to another system via network.
+#[async_trait]
+pub trait Sender<Msg>: Send + Sync
+    where
+        Msg: Message
 {
-    /// The type of value produced by the sink when an error occurs.
+    /// The type of value produced by the sender when an error occurs.
     type Error;
 
-    async fn send(&mut self, msg: &Item) -> Result<(), Self::Error>;
+    /// Send a message to the receiving side.
+    async fn send(&mut self, msg: &Msg) -> Result<(), Self::Error>;
 }
 
-// Define the TimerActor with a generic Sender
-struct TimerActor<S>
+/// A sample actor which sends messages a regular intervals
+pub struct TimerActor<S>
     where
         S: Sender<i64, Error=Error>,
 {
+    /// Destination of the messages.
     sink: S,
+
+    /// Pause between messages
+    interval: Duration,
 }
 
 impl<S> TimerActor<S>
     where
         S: Sender<i64, Error=Error> + Send + Sync,
 {
-    pub fn new(sink: S) -> Self {
-        TimerActor { sink }
+    pub fn new(sink: S, interval: Duration) -> Self {
+        TimerActor { sink, interval }
     }
 
     pub async fn run(&mut self) -> Result<(), anyhow::Error> {
@@ -40,7 +55,7 @@ impl<S> TimerActor<S>
         loop {
             i = i + 1;
             self.sink.send(&i).await?;
-            tokio::time::sleep(Duration::from_millis(1)).await;
+            tokio::time::sleep(self.interval).await;
         }
     }
 }
@@ -49,12 +64,6 @@ impl<S> TimerActor<S>
 struct ConsoleSender {
     capacity: usize,
 }
-
-
-impl<T> Message for T
-    where
-        T: Display + Send + Sync + Debug + Clone
-{}
 
 
 #[async_trait]
@@ -66,7 +75,8 @@ impl<M: Message> Sender<M> for ConsoleSender {
         if self.capacity == 0 {
             Err(anyhow!("Closed"))
         } else {
-            println!("Sent {}", msg);
+            let json = serde_json::to_string(&msg)?;
+            println!("Sent {}", json);
             Ok(())
         }
     }
@@ -75,7 +85,6 @@ impl<M: Message> Sender<M> for ConsoleSender {
 
 #[cfg(test)]
 mod tests {
-    use futures::AsyncWriteExt;
     use log::info;
     use super::*;
     use tokio;
@@ -85,7 +94,7 @@ mod tests {
     #[tokio::test]
     async fn test_timer_actor() -> Result<(), anyhow::Error> {
         let sender = ConsoleSender { capacity: 10 };
-        let mut actor = TimerActor::new(sender);
+        let mut actor = TimerActor::new(sender, Duration::from_millis(1));
 
         let handle = tokio::spawn(async move {
             let result = actor.run().await;
