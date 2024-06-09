@@ -3,6 +3,8 @@
 
 mod actor;
 mod mqtt;
+mod actix_sample;
+
 
 use clap::Parser;
 use log::{debug, info, Level};

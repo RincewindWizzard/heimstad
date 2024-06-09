@@ -1,7 +1,7 @@
 use rumqttc::{MqttOptions, AsyncClient, QoS};
 use tokio::{task, time};
 use std::time::Duration;
-use std::error::Error;
+
 
 async fn mqtt_connect() {
     let mut mqttoptions = MqttOptions::new("heimstad", "localhost", 1883);
