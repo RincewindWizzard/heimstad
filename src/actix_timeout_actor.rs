@@ -1,7 +1,8 @@
 use std::fmt::Display;
 use std::time::{Duration, Instant};
-use actix::{Actor, Context, Handler, Message, Recipient};
+use actix::{Actor, AsyncContext, Context, Handler, Message, Recipient};
 use log::debug;
+use crate::actix_timeout_actor::State::Off;
 
 
 #[derive(Message, PartialEq, Debug, Clone, Copy)]
@@ -52,6 +53,12 @@ impl Minuterie {
         self.state = state;
         self.update_timeout();
     }
+
+    fn notify_subscribers(&self) {
+        for recipient in &self.recipients {
+            recipient.do_send(self.state);
+        }
+    }
 }
 
 impl Handler<State> for Minuterie {
@@ -62,10 +69,14 @@ impl Handler<State> for Minuterie {
         let changed = self.state != msg;
         self.set_state(msg);
         if changed {
-            for recipient in &self.recipients {
-                recipient.do_send(msg);
-            }
+            self.notify_subscribers();
         }
+        ctx.run_later(self.timeout - Instant::now(), |act, ctx| {
+            if act.is_timeout() {
+                act.set_state(Off);
+                act.notify_subscribers();
+            }
+        });
     }
 }
 
