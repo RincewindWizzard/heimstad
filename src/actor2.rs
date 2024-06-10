@@ -1,3 +1,4 @@
+/*
 use std::sync::Arc;
 use async_trait::async_trait;
 
@@ -46,7 +47,7 @@ impl ActorSystem {
         let actor_ref = &actor;
         self.actors.push(actor);
         let ctx = Arc::new(self);
-        actor_ref.started(self).await;
+        //actor_ref.started(self).await;
     }
 
     async fn send_message(&mut self, message: Message) {
@@ -113,3 +114,6 @@ mod tests {
         Ok(())
     }
 }
+
+
+ */

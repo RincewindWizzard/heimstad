@@ -5,6 +5,7 @@ mod actor;
 mod mqtt;
 mod actix_sample;
 mod actor2;
+mod actix_timeout_actor;
 
 
 use std::time::Duration;
