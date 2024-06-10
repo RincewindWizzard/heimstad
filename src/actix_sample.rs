@@ -3,6 +3,24 @@ use std::time::Duration;
 use actix::prelude::*;
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #[derive(Message)]
 #[rtype(result = "()")]
 struct Measurement(i64);
@@ -72,23 +90,6 @@ enum MyMessage {
     Shutdown,
 }
 
-#[derive(Message)]
-#[rtype(result = "()")]
-struct Message<T> {
-    topic: Topic,
-    payload: T,
-}
-
-struct Topic(String);
-
-pub trait Subscriber<T>: Actor<Context=Context<Self>> + Handler<Message<T>> + Send {}
-
-impl<T, A> Subscriber<T> for A where A: Actor<Context=Context<A>> + Handler<Message<T>> + Send {}
-
-
-struct MessageBroker {
-    subscribers: HashMap<Topic, Vec<Addr<Box<dyn Subscriber<_, Context=(), Result=()>>>>>,
-}
 
 #[cfg(test)]
 mod tests {

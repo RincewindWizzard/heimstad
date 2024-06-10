@@ -4,10 +4,14 @@
 mod actor;
 mod mqtt;
 mod actix_sample;
+mod actor2;
 
 
+use std::time::Duration;
 use clap::Parser;
 use log::{debug, info, Level};
+use rumqttc::{AsyncClient, MqttOptions, QoS};
+use tokio::task;
 
 /// A web UI for my smart home
 #[derive(Parser, Debug)]
@@ -33,4 +37,7 @@ async fn main() {
     debug!("Args: {:?}", args);
     let version = env!("CARGO_PKG_VERSION");
     println!("You are running heimstad {version}");
+
+    mqtt::mqtt_connect().await;
+
 }
