@@ -1,13 +1,16 @@
+use std::fmt::Display;
 use std::time::{Duration, Instant};
 use actix::{Actor, Context, Handler, Message, Recipient};
+use log::debug;
 
 
-#[derive(Message, PartialEq)]
+#[derive(Message, PartialEq, Debug, Clone, Copy)]
 #[rtype(result = "()")]
 enum State {
     On,
     Off,
 }
+
 
 struct Minuterie {
     state: State,
@@ -18,6 +21,10 @@ struct Minuterie {
 
 impl Actor for Minuterie {
     type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        debug!("Minuterie started!");
+    }
 }
 
 impl Minuterie {
@@ -51,9 +58,14 @@ impl Handler<State> for Minuterie {
     type Result = ();
 
     fn handle(&mut self, msg: State, ctx: &mut Self::Context) -> Self::Result {
+        debug!("Minuterie got {msg:?}");
         let changed = self.state != msg;
         self.set_state(msg);
-        if changed {}
+        if changed {
+            for recipient in &self.recipients {
+                recipient.do_send(msg);
+            }
+        }
     }
 }
 
@@ -95,19 +107,29 @@ mod util {
 mod tests {
     use crate::actix_timeout_actor::util::ChannelWrapperActor;
     use std::time::{Duration, Instant};
-    use actix::{Actor, Arbiter, Context, Handler, Recipient, System};
-    use tokio::time::timeout;
+    use actix::{Actor};
+    use log::Level;
+
     use crate::actix_timeout_actor::{Minuterie, State};
     use crate::actix_timeout_actor::State::{Off, On};
     use tokio::sync::mpsc;
-    use tokio::sync::mpsc::error::SendError;
-    use tokio::sync::mpsc::Sender;
+    use tokio::time::timeout;
 
+    fn setup_logging() {
+        stderrlog::new()
+            .module(module_path!())
+            .quiet(false)
+            .verbosity(Level::Debug) // show warnings and above
+            .timestamp(stderrlog::Timestamp::Millisecond)
+            .init()
+            .expect("Could not setup logging!");
+    }
 
     #[actix_rt::test]
-    async fn test_actix() -> Result<(), anyhow::Error> {
+    async fn test_minuterie() -> Result<(), anyhow::Error> {
+        setup_logging();
         let timeout = Duration::from_millis(10);
-        let (tx, rx) = mpsc::channel::<State>(20);
+        let (tx, mut rx) = mpsc::channel::<State>(20);
         let mut minuterie = Minuterie::new(timeout);
         let channel_wrapper = ChannelWrapperActor::from(tx).start();
         minuterie.subscribe(channel_wrapper.recipient());
@@ -116,13 +138,22 @@ mod tests {
         let sequence = vec![
             (2, On),
             (4, Off),
+            (10, On),
+            (20, On),
+            (25, On),
         ];
 
         let start = Instant::now();
         for (tick, state) in sequence {
             let until = start + timeout * tick;
-            tokio::time::sleep_until(until.into());
-            minuterie.send(state).await?;
+            tokio::time::sleep_until(until.into()).await;
+            minuterie.do_send(state);
+        }
+        tokio::time::sleep(timeout * 2).await;
+
+
+        while let Ok(Some(msg)) = tokio::time::timeout(timeout, rx.recv()).await {
+            println!("Got: {:?}", msg);
         }
         Ok(())
     }

@@ -8,11 +8,8 @@ mod actor2;
 mod actix_timeout_actor;
 
 
-use std::time::Duration;
 use clap::Parser;
-use log::{debug, info, Level};
-use rumqttc::{AsyncClient, MqttOptions, QoS};
-use tokio::task;
+use log::{debug, Level};
 
 /// A web UI for my smart home
 #[derive(Parser, Debug)]

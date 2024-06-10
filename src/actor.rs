@@ -144,7 +144,7 @@ impl<S> TimerActor<S>
     pub async fn run(&mut self) -> Result<(), anyhow::Error> {
         let mut i = 0;
         loop {
-            i = i + 1;
+            i += 1;
             self.sink.send(&i).await?;
             tokio::time::sleep(self.interval).await;
         }
@@ -178,7 +178,7 @@ impl<M: Message> Sender<M> for ConsoleSender {
 mod tests {
     use log::info;
     use super::*;
-    use tokio;
+    
     use tokio::sync::broadcast;
 
 

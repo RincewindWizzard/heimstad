@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::time::Duration;
 use actix::prelude::*;
 
@@ -71,7 +70,7 @@ impl Handler<Measurement> for SumActor {
     type Result = ResponseFuture<()>;
 
     fn handle(&mut self, msg: Measurement, _ctx: &mut Context<Self>) -> Self::Result {
-        self.sum = self.sum + msg.0;
+        self.sum += msg.0;
 
         let sum = self.sum;
         let dst = self.dst.clone();
@@ -94,8 +93,8 @@ enum MyMessage {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
-    use actix::{Actor, Arbiter, System};
-    use crate::actix_sample::{Emitter, Measurement, SumActor, SumPrinter};
+    use actix::{Actor};
+    use crate::actix_sample::{Emitter, SumActor, SumPrinter};
 
     #[actix_rt::test]
     async fn test_actix() -> Result<(), anyhow::Error> {

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use rumqttc::{MqttOptions, AsyncClient, QoS, EventLoop};
 use tokio::{task, time};
 use std::time::Duration;
-use actix::{Actor, AsyncContext, Context, Handler, Message, WrapFuture};
+use actix::{Actor, AsyncContext, Context, WrapFuture};
 
 struct MqttLoop {
     event_loop: Arc<EventLoop>,
@@ -12,7 +12,7 @@ impl Actor for MqttLoop {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        let mut event_loop = self.event_loop.clone();
+        let event_loop = self.event_loop.clone();
         ctx.spawn(async move {
             //while let Ok(notification) = event_loop.poll().await {
             //  println!("Received = {:?}", notification);
@@ -26,7 +26,7 @@ pub async fn mqtt_connect() {
     let mut mqttoptions = MqttOptions::new("heimstad", "localhost", 1883);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
 
-    let (mut client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+    let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
     client.subscribe("heimstad/sub", QoS::AtMostOnce).await.unwrap();
 
     task::spawn(async move {
