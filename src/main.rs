@@ -6,6 +6,7 @@ mod mqtt;
 mod actix_sample;
 mod actor2;
 mod actix_timeout_actor;
+mod just_channels;
 
 
 use clap::Parser;
@@ -36,6 +37,6 @@ async fn main() {
     let version = env!("CARGO_PKG_VERSION");
     println!("You are running heimstad {version}");
 
-    mqtt::mqtt_connect().await;
-
+    //mqtt::mqtt_connect().await;
+    let _ = crate::just_channels::main().await;
 }
