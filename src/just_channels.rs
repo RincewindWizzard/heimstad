@@ -60,19 +60,23 @@ impl Minuterie {
         }
         Ok(())
     }
+
+
     async fn run(&mut self) -> Result<(), ActorError> {
         loop {
-            match tokio::time::timeout(self.timeout, self.rx.recv()).await {
-                Ok(Some(_)) => {
-                    self.set_state(State::On).await.map_err(|_| Shutdown)?;
-                }
-                Ok(None) => {
-                    return Err(Shutdown);
-                }
-                Err(_) => {
-                    self.set_state(State::Off).await.map_err(|_| Shutdown)?;
-                }
-            }
+            let next_state =
+                match tokio::time::timeout(self.timeout, self.rx.recv()).await {
+                    Ok(Some(_)) => {
+                        State::On
+                    }
+                    Err(_) => {
+                        State::Off
+                    }
+                    Ok(None) => {
+                        return Err(Shutdown);
+                    }
+                };
+            self.set_state(next_state).await.map_err(|_| Shutdown)?;
         }
     }
 }
@@ -95,4 +99,67 @@ pub async fn main() -> Result<(), anyhow::Error> {
         debug!("Recieved: {state:?}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+    use log::debug;
+    use crate::just_channels::{Heartbeat, Minuterie};
+
+
+    #[tokio::test]
+    async fn test_timerie() -> Result<(), anyhow::Error> {
+        let timeout = Duration::from_millis(10);
+        let (mut minuterie, tx, mut rx) = Minuterie::new(timeout);
+
+        let handle = tokio::spawn(async move {
+            let _ = minuterie.run().await;
+        });
+
+        let heartbeats = vec![
+            0,
+            1,
+            2,
+            4,
+            15,
+            40,
+        ];
+
+
+        let begin = Instant::now();
+        let tick = timeout / 10;
+
+        let read_handle = {
+            let begin = begin.clone();
+            tokio::spawn(async move {
+                let mut result = vec![];
+                while let Some(state) = rx.recv().await {
+                    let since = discrete_time(Instant::now() - begin, tick);
+                    println!("Received {since:?}: {state:?}");
+                    result.push((since, state));
+                }
+                result
+            })
+        };
+        for instant in &heartbeats {
+            let instant = begin + (*instant) * tick;
+            tokio::time::sleep_until(tokio::time::Instant::from(instant)).await;
+            tx.send(Heartbeat).await?;
+            println!("Sent Heartbeat at {}", discrete_time(Instant::now() - begin, tick));
+        }
+
+        tokio::time::sleep(timeout * 2).await;
+        drop(tx);
+        let result = read_handle.await?;
+
+        println!("Input {:?}\nOutput {:?}", heartbeats, result);
+
+        let _ = handle.await;
+        Ok(())
+    }
+
+    fn discrete_time(d: Duration, discrete: Duration) -> usize {
+        (d.as_nanos() / discrete.as_nanos()) as usize
+    }
 }
