@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::process::Output;
 use std::time::Instant;
 use std::time::Duration;
 use log::debug;
@@ -5,7 +9,10 @@ use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::Sender;
+use tokio::task::JoinHandle;
 use crate::just_channels::ActorError::Shutdown;
+
+const BUFSIZE: usize = 1024;
 
 struct Heartbeat;
 
@@ -101,18 +108,76 @@ pub async fn main() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+type ActorFuture = Pin<Box<dyn Future<Output=Result<(), ActorError>> + Send>>;
+type ActorRunMethod<I, O> = Box<dyn FnMut(Receiver<I>, Sender<O>) -> ActorFuture>;
+
+fn heartbeat_emitter(interval: Duration) -> ActorRunMethod<(), Heartbeat> {
+    Box::new(move |rx, tx| {
+        Box::pin(async move {
+            while !rx.is_closed() {
+                tx.send(Heartbeat).await.map_err(|_| Shutdown)?;
+                tokio::time::sleep(interval).await;
+            }
+            Ok(())
+        })
+    })
+}
+
+impl<I, O> StartAble<I, O> for ActorRunMethod<I, O> {
+    fn start(&mut self) -> RunningActor<I, O> {
+        let (tx_in, rx_in) = mpsc::channel(BUFSIZE);
+        let (tx_out, rx_out) = mpsc::channel(BUFSIZE);
+        RunningActor {
+            future: tokio::spawn(async move {
+                self(rx_in, tx_out).await
+            }),
+            tx: tx_in,
+            rx: rx_out,
+        }
+    }
+}
+
+pub trait StartAble<I, O> {
+    fn start(&mut self) -> RunningActor<I, O>;
+}
+
+struct RunningActor<I, O> {
+    future: JoinHandle<Result<(), ActorError>>,
+    tx: Sender<I>,
+    rx: Receiver<O>,
+}
+
+
+async fn foo(a: &str) -> i64 {
+    let f = async move {
+        42
+    };
+    a.len() as i64
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};
     use log::debug;
-    use crate::just_channels::{Heartbeat, Minuterie};
+    use crate::just_channels::{foo, Heartbeat, heartbeat_emitter, Minuterie, StartAble};
 
+    #[tokio::test]
+    async fn test_some_higher_order_stuff() {
+        let interval = Duration::from_millis(10);
+        let mut heartbeat_emitter = heartbeat_emitter(interval);
+        let mut running = heartbeat_emitter.start();
+
+        tokio::time::sleep(interval * 10).await;
+        drop(running.tx);
+        while let Some(_) = running.rx.recv().await {
+            println!("Got Heartbeat!");
+        }
+    }
 
     #[tokio::test]
     async fn test_timerie() -> Result<(), anyhow::Error> {
         let timeout = Duration::from_millis(10);
         let (mut minuterie, tx, mut rx) = Minuterie::new(timeout);
-
         let handle = tokio::spawn(async move {
             let _ = minuterie.run().await;
         });
