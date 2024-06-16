@@ -1,7 +1,4 @@
 
-use std::future::Future;
-use std::pin::Pin;
-use std::process::Output;
 use std::time::Instant;
 use std::time::Duration;
 use log::debug;
@@ -9,7 +6,6 @@ use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::Sender;
-use tokio::task::JoinHandle;
 use crate::actor::ActorError::Shutdown;
 use crate::actor::{ActorError, ActorRunMethod};
 
@@ -118,14 +114,6 @@ fn heartbeat_emitter(interval: Duration) -> ActorRunMethod<(), Heartbeat> {
     })
 }
 
-
-async fn foo(a: &str) -> i64 {
-    let f = async move {
-        42
-    };
-    a.len() as i64
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};
@@ -135,7 +123,7 @@ mod tests {
     #[tokio::test]
     async fn test_some_higher_order_stuff() {
         let interval = Duration::from_millis(10);
-        let mut heartbeat_emitter = heartbeat_emitter(interval);
+        let heartbeat_emitter = heartbeat_emitter(interval);
         let mut running = heartbeat_emitter.start();
 
         tokio::time::sleep(interval * 10).await;

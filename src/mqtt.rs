@@ -1,3 +1,4 @@
+/*
 use std::sync::Arc;
 use rumqttc::{MqttOptions, AsyncClient, QoS, EventLoop};
 use tokio::{task, time};
@@ -35,4 +36,4 @@ pub async fn mqtt_connect() {
             time::sleep(Duration::from_millis(100)).await;
         }
     });
-}
+}*/
