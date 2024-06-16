@@ -16,6 +16,11 @@ pub enum ActorError {
     Shutdown,
 }
 
+macro_rules! boxed_async {
+    ($body:expr) => {
+        Box::pin(async move { $body })
+    };
+}
 pub trait Actor<I, O>
     where
         I: Send + 'static,
@@ -27,7 +32,7 @@ pub trait Actor<I, O>
     {
         let (tx_in, rx_in) = mpsc::channel(BUFSIZE);
         let (tx_out, rx_out) = mpsc::channel(BUFSIZE);
-        Box::pin(async move {
+        boxed_async!({
             let handle = tokio::spawn(async move {
                 self.run(rx_in, tx_out).await
             });
@@ -53,7 +58,7 @@ impl HeartbeatEmitter {
 
 impl Actor<(), Heartbeat> for HeartbeatEmitter {
     fn run(&self, rx: Receiver<()>, tx: Sender<Heartbeat>) -> ActorFuture {
-        Box::pin(async move {
+        boxed_async!({
             while !rx.is_closed() {
                 tx.send(Heartbeat).await.map_err(|_| Shutdown)?;
                 tokio::time::sleep(self.interval).await;
@@ -71,14 +76,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_some_higher_order_stuff() {
-        let interval = Duration::from_millis(10);
+        let interval = Duration::from_millis(50);
+        let times: u32 = 50;
         let heartbeat_emitter = HeartbeatEmitter::new(interval);
         let (handle, tx, mut rx) = heartbeat_emitter.start().await;
 
-        tokio::time::sleep(interval * 10).await;
+        tokio::time::sleep(interval * times).await;
         drop(tx);
+        let mut i: i64 = 0;
         while let Some(_) = rx.recv().await {
-            println!("Got Heartbeat!");
+            i += 1;
         }
+        println!("Got {i} Heartbeats!");
+        assert!(i.abs_diff(times as i64) <= 1);
     }
 }
