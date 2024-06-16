@@ -4,6 +4,7 @@
 mod mqtt;
 mod just_channels;
 mod actor;
+mod actor3;
 
 
 use clap::Parser;
