@@ -1,12 +1,9 @@
 #![doc = include_str!("../README.md")]
 
 
-mod actor;
 mod mqtt;
-mod actix_sample;
-mod actor2;
-mod actix_timeout_actor;
 mod just_channels;
+mod actor;
 
 
 use clap::Parser;

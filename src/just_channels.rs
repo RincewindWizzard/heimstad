@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::process::Output;
@@ -10,9 +10,9 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
-use crate::just_channels::ActorError::Shutdown;
+use crate::actor::ActorError::Shutdown;
+use crate::actor::{ActorError, ActorRunMethod};
 
-const BUFSIZE: usize = 1024;
 
 struct Heartbeat;
 
@@ -22,9 +22,6 @@ enum State {
     Off,
 }
 
-enum ActorError {
-    Shutdown,
-}
 
 struct Minuterie {
     rx: Receiver<Heartbeat>,
@@ -108,8 +105,6 @@ pub async fn main() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-type ActorFuture = Pin<Box<dyn Future<Output=Result<(), ActorError>> + Send>>;
-type ActorRunMethod<I, O> = Box<dyn FnMut(Receiver<I>, Sender<O>) -> ActorFuture + Send>;
 
 fn heartbeat_emitter(interval: Duration) -> ActorRunMethod<(), Heartbeat> {
     Box::new(move |rx, tx| {
@@ -123,34 +118,6 @@ fn heartbeat_emitter(interval: Duration) -> ActorRunMethod<(), Heartbeat> {
     })
 }
 
-impl<I, O> StartAble<I, O> for ActorRunMethod<I, O>
-    where
-        I: Send + 'static,
-        O: Send + 'static,
-{
-    fn start(mut self) -> RunningActor<I, O> {
-        let (tx_in, rx_in) = mpsc::channel(BUFSIZE);
-        let (tx_out, rx_out) = mpsc::channel(BUFSIZE);
-        RunningActor {
-            future: tokio::spawn(async move {
-                self(rx_in, tx_out).await
-            }),
-            tx: tx_in,
-            rx: rx_out,
-        }
-    }
-}
-
-pub trait StartAble<I, O> {
-    fn start(self) -> RunningActor<I, O>;
-}
-
-struct RunningActor<I, O> {
-    future: JoinHandle<Result<(), ActorError>>,
-    tx: Sender<I>,
-    rx: Receiver<O>,
-}
-
 
 async fn foo(a: &str) -> i64 {
     let f = async move {
@@ -162,8 +129,8 @@ async fn foo(a: &str) -> i64 {
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};
-    use log::debug;
-    use crate::just_channels::{foo, Heartbeat, heartbeat_emitter, Minuterie, StartAble};
+    use crate::actor::StartAble;
+    use crate::just_channels::{Heartbeat, heartbeat_emitter, Minuterie};
 
     #[tokio::test]
     async fn test_some_higher_order_stuff() {
