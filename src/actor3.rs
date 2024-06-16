@@ -42,25 +42,25 @@ pub trait Actor<I, O>
     fn run(&self, rx: Receiver<I>, tx: Sender<O>) -> ActorFuture;
 }
 
-struct Heartbeat;
+struct Tick;
 
-struct HeartbeatEmitter {
+struct ClockActor {
     interval: Duration,
 }
 
-impl HeartbeatEmitter {
-    fn new(interval: Duration) -> HeartbeatEmitter {
-        HeartbeatEmitter {
+impl ClockActor {
+    fn new(interval: Duration) -> ClockActor {
+        ClockActor {
             interval,
         }
     }
 }
 
-impl Actor<(), Heartbeat> for HeartbeatEmitter {
-    fn run(&self, rx: Receiver<()>, tx: Sender<Heartbeat>) -> ActorFuture {
+impl Actor<(), Tick> for ClockActor {
+    fn run(&self, rx: Receiver<()>, tx: Sender<Tick>) -> ActorFuture {
         boxed_async!({
             while !rx.is_closed() {
-                tx.send(Heartbeat).await.map_err(|_| Shutdown)?;
+                tx.send(Tick).await.map_err(|_| Shutdown)?;
                 tokio::time::sleep(self.interval).await;
             }
             Ok(())
@@ -72,13 +72,13 @@ impl Actor<(), Heartbeat> for HeartbeatEmitter {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
-    use crate::actor3::{Actor, HeartbeatEmitter};
+    use crate::actor3::{Actor, ClockActor};
 
     #[tokio::test]
     async fn test_some_higher_order_stuff() {
         let interval = Duration::from_millis(50);
         let times: u32 = 50;
-        let heartbeat_emitter = HeartbeatEmitter::new(interval);
+        let heartbeat_emitter = ClockActor::new(interval);
         let (handle, tx, mut rx) = heartbeat_emitter.start().await;
 
         tokio::time::sleep(interval * times).await;
@@ -87,7 +87,7 @@ mod tests {
         while let Some(_) = rx.recv().await {
             i += 1;
         }
-        println!("Got {i} Heartbeats!");
+        println!("Got {i} Ticks!");
         assert!(i.abs_diff(times as i64) <= 1);
     }
 }
