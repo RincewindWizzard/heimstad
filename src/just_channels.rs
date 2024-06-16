@@ -109,7 +109,7 @@ pub async fn main() -> Result<(), anyhow::Error> {
 }
 
 type ActorFuture = Pin<Box<dyn Future<Output=Result<(), ActorError>> + Send>>;
-type ActorRunMethod<I, O> = Box<dyn FnMut(Receiver<I>, Sender<O>) -> ActorFuture>;
+type ActorRunMethod<I, O> = Box<dyn FnMut(Receiver<I>, Sender<O>) -> ActorFuture + Send>;
 
 fn heartbeat_emitter(interval: Duration) -> ActorRunMethod<(), Heartbeat> {
     Box::new(move |rx, tx| {
@@ -123,8 +123,12 @@ fn heartbeat_emitter(interval: Duration) -> ActorRunMethod<(), Heartbeat> {
     })
 }
 
-impl<I, O> StartAble<I, O> for ActorRunMethod<I, O> {
-    fn start(&mut self) -> RunningActor<I, O> {
+impl<I, O> StartAble<I, O> for ActorRunMethod<I, O>
+    where
+        I: Send + 'static,
+        O: Send + 'static,
+{
+    fn start(mut self) -> RunningActor<I, O> {
         let (tx_in, rx_in) = mpsc::channel(BUFSIZE);
         let (tx_out, rx_out) = mpsc::channel(BUFSIZE);
         RunningActor {
@@ -138,7 +142,7 @@ impl<I, O> StartAble<I, O> for ActorRunMethod<I, O> {
 }
 
 pub trait StartAble<I, O> {
-    fn start(&mut self) -> RunningActor<I, O>;
+    fn start(self) -> RunningActor<I, O>;
 }
 
 struct RunningActor<I, O> {
