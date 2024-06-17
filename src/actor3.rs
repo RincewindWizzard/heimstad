@@ -89,10 +89,23 @@ impl TopicBytesSerde for Tick {
     }
 }
 
-type ByteReceiveResult = Pin<Box<dyn Future<Output=Option<Vec<u8>>>>>;
+
+type ByteReceiveResult<'a> = Pin<Box<dyn Future<Output=Option<Vec<u8>>> + 'a>>;
 
 pub trait SerializeReceiver {
-    fn recv(&self) -> ByteReceiveResult;
+    fn recv(&mut self) -> ByteReceiveResult;
+}
+
+impl<T> SerializeReceiver for Receiver<T>
+    where
+        T: TopicBytesSerde,
+{
+    fn recv(&mut self) -> ByteReceiveResult {
+        boxed_async!({
+            let doc = self.recv().await?;
+            doc.to_bytes()
+        })
+    }
 }
 
 /*
@@ -129,7 +142,7 @@ impl<'de, T> DeserializeSender<'de> for Sender<T>
 mod tests {
     use std::time::Duration;
     use tokio::sync::mpsc;
-    use crate::actor3::{Actor, BUFSIZE, ClockActor, Tick, TopicBytesSerde};
+    use crate::actor3::{Actor, BUFSIZE, ClockActor, SerializeReceiver, Tick, TopicBytesSerde};
 
     #[tokio::test]
     async fn test_some_higher_order_stuff() {
@@ -155,7 +168,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_serializing() {
-        //let (tx, rx) = mpsc::channel(BUFSIZE);
         let tick = Tick;
         let data = tick.to_bytes();
         assert!(data.is_some());
@@ -163,5 +175,16 @@ mod tests {
 
         let tick = Tick::from_bytes("Tick".as_bytes());
         assert!(tick.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_serializing_receiver() {
+        let (tx, mut rx) = mpsc::channel(BUFSIZE);
+        let tick = Tick;
+        let _ = tx.send(tick).await;
+
+        let data: Option<Vec<u8>> = SerializeReceiver::recv(&mut rx).await;
+        assert!(data.is_some());
+        data.map(|data| assert_eq!(data, Vec::from("Tick".as_bytes())));
     }
 }
