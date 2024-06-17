@@ -68,11 +68,68 @@ impl Actor<(), Tick> for ClockActor {
     }
 }
 
+pub trait TopicBytesSerde
+    where Self: Sized
+{
+    fn from_bytes(data: &[u8]) -> Option<Self>;
+
+    fn to_bytes(&self) -> Option<Vec<u8>>;
+}
+
+impl TopicBytesSerde for Tick {
+    fn from_bytes(data: &[u8]) -> Option<Self> {
+        if data == "Tick".as_bytes() {
+            return Some(Tick);
+        }
+        None
+    }
+
+    fn to_bytes(&self) -> Option<Vec<u8>> {
+        Some(Vec::from("Tick".as_bytes()))
+    }
+}
+
+type ByteReceiveResult = Pin<Box<dyn Future<Output=Option<Vec<u8>>>>>;
+
+pub trait SerializeReceiver {
+    fn recv(&self) -> ByteReceiveResult;
+}
+
+/*
+impl<'de, R, T> SerializeReceiver<'de> for Receiver<T>
+    where
+        T: serde::Serialize<'de>,
+{
+    fn recv(&mut self) -> ByteReceiveResult {
+        boxed_async!({
+            let doc = self.recv().await?;
+            let data = doc.serialize().map_err(|| None)?;
+
+
+            Some(data)
+        })
+    }
+}
+
+pub trait DeserializeSender<'de> {
+    fn send(&self, data: &'de [u8]) -> Result<(), serde_json::Error>;
+}
+
+impl<'de, T> DeserializeSender<'de> for Sender<T>
+    where
+        T: serde::Deserialize<'de>,
+{
+    fn send(&self, data: &'de [u8]) -> Result<(), serde_json::Error> {
+        let doc = serde_json::from_slice::<T>(data)?;
+        Ok(())
+    }
+}*/
 
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
-    use crate::actor3::{Actor, ClockActor};
+    use tokio::sync::mpsc;
+    use crate::actor3::{Actor, BUFSIZE, ClockActor, Tick, TopicBytesSerde};
 
     #[tokio::test]
     async fn test_some_higher_order_stuff() {
@@ -89,5 +146,22 @@ mod tests {
         }
         println!("Got {i} Ticks!");
         assert!(i.abs_diff(times as i64) <= 1);
+    }
+
+    #[tokio::test]
+    async fn test_broker() {
+        let broker = ();
+    }
+
+    #[tokio::test]
+    async fn test_serializing() {
+        //let (tx, rx) = mpsc::channel(BUFSIZE);
+        let tick = Tick;
+        let data = tick.to_bytes();
+        assert!(data.is_some());
+        data.map(|data| assert_eq!(data, Vec::from("Tick".as_bytes())));
+
+        let tick = Tick::from_bytes("Tick".as_bytes());
+        assert!(tick.is_some());
     }
 }
