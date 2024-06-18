@@ -7,7 +7,7 @@ use tokio::task::JoinHandle;
 use crate::boxed_async;
 
 
-const BUFFER_SIZE: usize = 1024;
+pub const BUFFER_SIZE: usize = 1024;
 
 pub type ActorFuture<'a> = Pin<Box<dyn Future<Output=Result<(), ActorError>> + Send + 'a>>;
 pub type Payload = Vec<u8>;

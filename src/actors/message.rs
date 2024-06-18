@@ -1,6 +1,5 @@
 use std::fmt::{Debug, Formatter, Write};
 use std::io::Read;
-use std::rc::Rc;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
@@ -33,6 +32,11 @@ impl Message {
             T: Payload
     {
         let payload = payload.try_into_bytes()?;
+        Self::new_from_bytes(topic, payload)
+    }
+
+    pub fn new_from_bytes(topic: &str, payload: Bytes) -> Option<Message>
+    {
         Some(Message {
             topic: topic.to_string(),
             payload,
@@ -43,6 +47,10 @@ impl Message {
             T: Payload
     {
         Payload::try_from_bytes(self.payload.clone())
+    }
+
+    pub fn topic(&self) -> &str {
+        &self.topic
     }
 }
 
