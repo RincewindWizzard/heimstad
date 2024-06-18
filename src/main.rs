@@ -2,10 +2,7 @@
 
 
 mod mqtt;
-mod just_channels;
-mod actor;
-mod actor3;
-
+mod actors;
 
 use clap::Parser;
 use log::{debug, Level};
@@ -36,5 +33,5 @@ async fn main() {
     println!("You are running heimstad {version}");
 
     //mqtt::mqtt_connect().await;
-    let _ = crate::just_channels::main().await;
+    //let _ = crate::just_channels::main().await;
 }

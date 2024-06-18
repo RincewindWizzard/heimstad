@@ -1,12 +1,10 @@
 use std::future::Future;
 use std::pin::Pin;
 use tokio::sync::mpsc::{Receiver, Sender};
-use std::time::Duration;
 use anyhow::anyhow;
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::error::SendError;
 use tokio::task::JoinHandle;
-use crate::actor3::ActorError::Shutdown;
+use crate::boxed_async;
 
 
 const BUFSIZE: usize = 1024;
@@ -18,11 +16,7 @@ pub enum ActorError {
     Shutdown,
 }
 
-macro_rules! boxed_async {
-    ($body:expr) => {
-        Box::pin(async move { $body })
-    };
-}
+
 pub trait Actor<I, O>
     where
         I: Send + 'static,
@@ -44,73 +38,9 @@ pub trait Actor<I, O>
     fn run(&self, rx: Receiver<I>, tx: Sender<O>) -> ActorFuture;
 }
 
-#[derive(Debug)]
-struct Tick;
 
-struct ClockActor {
-    interval: Duration,
-}
+pub type Payload = Vec<u8>;
 
-impl ClockActor {
-    fn new(interval: Duration) -> ClockActor {
-        ClockActor {
-            interval,
-        }
-    }
-}
-
-impl Actor<(), Tick> for ClockActor {
-    fn run(&self, rx: Receiver<()>, tx: Sender<Tick>) -> ActorFuture {
-        boxed_async!({
-            while !rx.is_closed() {
-                tx.send(Tick).await.map_err(|_| Shutdown)?;
-                tokio::time::sleep(self.interval).await;
-            }
-            Ok(())
-        })
-    }
-}
-
-type Payload = Vec<u8>;
-
-
-impl TryInto<Payload> for Tick {
-    type Error = ();
-
-    fn try_into(self) -> Result<Payload, Self::Error> {
-        Ok(Vec::from("Tick".as_bytes()))
-    }
-}
-
-impl TryFrom<Payload> for Tick {
-    type Error = ();
-
-    fn try_from(data: Payload) -> Result<Self, Self::Error> {
-        if data == "Tick".as_bytes() {
-            return Ok(Tick);
-        }
-        Err(())
-    }
-}
-
-
-type ByteReceiveResult<'a> = Pin<Box<dyn Future<Output=Option<Vec<u8>>> + 'a>>;
-
-pub trait SerializeReceiver {
-    fn recv(&mut self) -> ByteReceiveResult;
-}
-
-impl<T> SerializeReceiver for Receiver<T>
-    where
-        T: TryInto<Payload>,
-{
-    fn recv(&mut self) -> ByteReceiveResult {
-        boxed_async!({
-            let doc = self.recv().await?;
-            doc.try_into().ok()
-        })
-    }
-}
 
 async fn wrap_receiver<I, O>(mut rx: Receiver<I>) -> Receiver<O>
     where
@@ -140,13 +70,14 @@ struct Topic<T> {
 mod tests {
     use std::time::Duration;
     use tokio::sync::mpsc;
-    use crate::actor3::{Actor, BUFSIZE, ClockActor, SerializeReceiver, Tick, wrap_receiver};
+    use crate::actors::actor::{Actor, BUFSIZE, wrap_receiver};
+    use crate::actors::heartbeat::{HeartbeatEmitter, Heartbeat};
 
     #[tokio::test]
     async fn test_some_higher_order_stuff() {
         let interval = Duration::from_millis(50);
         let times: u32 = 50;
-        let heartbeat_emitter = ClockActor::new(interval);
+        let heartbeat_emitter = HeartbeatEmitter::new(interval);
         let (handle, tx, mut rx) = heartbeat_emitter.start().await;
 
         tokio::time::sleep(interval * times).await;
@@ -166,12 +97,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_serializing() {
-        let tick = Tick;
+        let tick = Heartbeat;
         let data: Option<Vec<u8>> = tick.try_into().ok();
         assert!(data.is_some());
-        data.map(|data| assert_eq!(data, Vec::from("Tick".as_bytes())));
+        data.map(|data| assert_eq!(data, Vec::from("Heartbeat".as_bytes())));
 
-        let tick = Tick::try_from(Vec::from("Tick".as_bytes())).ok();
+        let tick = Heartbeat::try_from(Vec::from("Heartbeat".as_bytes())).ok();
         assert!(tick.is_some());
     }
 
@@ -179,14 +110,14 @@ mod tests {
     async fn test_wrap_receiver() {
         let (tx, mut rx) = mpsc::channel(BUFSIZE);
         let mut rx = wrap_receiver(rx).await;
-        let tick = Tick;
+        let tick = Heartbeat;
         let _ = tx.send(tick).await;
 
 
         let data: Option<Vec<u8>> = rx.recv().await;
         assert!(data.is_some());
         data.map(|data| {
-            assert_eq!(data, Vec::from("Tick".as_bytes()))
+            assert_eq!(data, Vec::from("Heartbeat".as_bytes()))
         });
     }
 }
