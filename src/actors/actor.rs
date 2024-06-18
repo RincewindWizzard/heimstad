@@ -20,13 +20,14 @@ pub trait Message {}
 
 impl<T> Message for T where T: TryInto<Payload> + TryFrom<Payload> {}
 
+pub type ActorResult = JoinHandle<Result<(), ActorError>>;
 
 pub trait Actor<I, O>
     where
         I: Send + 'static,
         O: Send + 'static, Self: 'static
 {
-    fn start(self) -> Pin<Box<dyn Future<Output=(JoinHandle<Result<(), ActorError>>, Sender<I>, Receiver<O>)> + Send>>
+    fn start(self) -> Pin<Box<dyn Future<Output=(ActorResult, Sender<I>, Receiver<O>)> + Send>>
         where
             Self: Sized + Send,
     {
@@ -48,7 +49,7 @@ pub async fn wrap_receiver<I, O>(mut rx: Receiver<I>) -> Receiver<O>
         O: Send + std::marker::Sync + 'static,
         I: TryInto<O> + Send + 'static
 {
-    let (tx, mut rx_out) = mpsc::channel(BUFFER_SIZE);
+    let (tx, rx_out) = mpsc::channel(BUFFER_SIZE);
 
     tokio::spawn(async move {
         while let Some(data) = rx.recv().await {
@@ -59,8 +60,6 @@ pub async fn wrap_receiver<I, O>(mut rx: Receiver<I>) -> Receiver<O>
 
     rx_out
 }
-
-
 
 
 #[cfg(test)]
@@ -75,7 +74,7 @@ mod tests {
         let interval = Duration::from_millis(50);
         let times: u32 = 50;
         let heartbeat_emitter = HeartbeatEmitter::new(interval);
-        let (handle, tx, mut rx) = heartbeat_emitter.start().await;
+        let (_, tx, mut rx) = heartbeat_emitter.start().await;
 
         tokio::time::sleep(interval * times).await;
         drop(tx);
@@ -85,11 +84,6 @@ mod tests {
         }
         println!("Got {i} Ticks!");
         assert!(i.abs_diff(times as i64) <= 1);
-    }
-
-    #[tokio::test]
-    async fn test_broker() {
-        let broker = ();
     }
 
     #[tokio::test]
@@ -105,7 +99,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_wrap_receiver() {
-        let (tx, mut rx) = mpsc::channel(BUFFER_SIZE);
+        let (tx, rx) = mpsc::channel(BUFFER_SIZE);
         let mut rx = wrap_receiver(rx).await;
         let tick = Heartbeat;
         let _ = tx.send(tick).await;
