@@ -3,6 +3,7 @@
 
 mod mqtt;
 mod actors;
+mod conf;
 
 use clap::Parser;
 use log::{debug, Level};

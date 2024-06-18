@@ -1,0 +1,24 @@
+[[actors]]
+type = "Emitter"
+interval = "10s"
+topic = "emitter/10s"
+
+[[actors]]
+type = "Emitter"
+interval = "1s"
+topic = "emitter/1s"
+
+[[actors]]
+type = "Minuterie"
+timeout = "5m"
+topic = "minuterie"
+input = []
+
+[[actors]]
+type = "Outlet"
+control_topic = ""
+status_topic = ""
+
+[[actors]]
+type = "Switch"
+topic = ""
