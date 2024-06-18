@@ -7,14 +7,18 @@ use tokio::task::JoinHandle;
 use crate::boxed_async;
 
 
-const BUFSIZE: usize = 1024;
+const BUFFER_SIZE: usize = 1024;
 
 pub type ActorFuture<'a> = Pin<Box<dyn Future<Output=Result<(), ActorError>> + Send + 'a>>;
-
+pub type Payload = Vec<u8>;
 
 pub enum ActorError {
     Shutdown,
 }
+
+pub trait Message {}
+
+impl<T> Message for T where T: TryInto<Payload> + TryFrom<Payload> {}
 
 
 pub trait Actor<I, O>
@@ -26,8 +30,8 @@ pub trait Actor<I, O>
         where
             Self: Sized + Send,
     {
-        let (tx_in, rx_in) = mpsc::channel(BUFSIZE);
-        let (tx_out, rx_out) = mpsc::channel(BUFSIZE);
+        let (tx_in, rx_in) = mpsc::channel(BUFFER_SIZE);
+        let (tx_out, rx_out) = mpsc::channel(BUFFER_SIZE);
         boxed_async!({
             let handle = tokio::spawn(async move {
                 self.run(rx_in, tx_out).await
@@ -39,15 +43,12 @@ pub trait Actor<I, O>
 }
 
 
-pub type Payload = Vec<u8>;
-
-
-async fn wrap_receiver<I, O>(mut rx: Receiver<I>) -> Receiver<O>
+pub async fn wrap_receiver<I, O>(mut rx: Receiver<I>) -> Receiver<O>
     where
         O: Send + std::marker::Sync + 'static,
         I: TryInto<O> + Send + 'static
 {
-    let (tx, mut rx_out) = mpsc::channel(BUFSIZE);
+    let (tx, mut rx_out) = mpsc::channel(BUFFER_SIZE);
 
     tokio::spawn(async move {
         while let Some(data) = rx.recv().await {
@@ -59,18 +60,14 @@ async fn wrap_receiver<I, O>(mut rx: Receiver<I>) -> Receiver<O>
     rx_out
 }
 
-struct Topic<T> {
-    name: String,
-    producer: Receiver<T>,
-    consumer: Sender<T>,
-}
+
 
 
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
     use tokio::sync::mpsc;
-    use crate::actors::actor::{Actor, BUFSIZE, wrap_receiver};
+    use crate::actors::actor::{Actor, BUFFER_SIZE, wrap_receiver};
     use crate::actors::heartbeat::{HeartbeatEmitter, Heartbeat};
 
     #[tokio::test]
@@ -108,7 +105,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_wrap_receiver() {
-        let (tx, mut rx) = mpsc::channel(BUFSIZE);
+        let (tx, mut rx) = mpsc::channel(BUFFER_SIZE);
         let mut rx = wrap_receiver(rx).await;
         let tick = Heartbeat;
         let _ = tx.send(tick).await;
