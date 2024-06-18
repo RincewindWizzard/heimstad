@@ -2,7 +2,9 @@ use std::future::Future;
 use std::pin::Pin;
 use tokio::sync::mpsc::{Receiver, Sender};
 use std::time::Duration;
+use anyhow::anyhow;
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::SendError;
 use tokio::task::JoinHandle;
 use crate::actor3::ActorError::Shutdown;
 
@@ -42,6 +44,7 @@ pub trait Actor<I, O>
     fn run(&self, rx: Receiver<I>, tx: Sender<O>) -> ActorFuture;
 }
 
+#[derive(Debug)]
 struct Tick;
 
 struct ClockActor {
@@ -69,6 +72,7 @@ impl Actor<(), Tick> for ClockActor {
 }
 
 type Payload = Vec<u8>;
+
 
 impl TryInto<Payload> for Tick {
     type Error = ();
@@ -108,35 +112,22 @@ impl<T> SerializeReceiver for Receiver<T>
     }
 }
 
-/*
-impl<'de, R, T> SerializeReceiver<'de> for Receiver<T>
+async fn wrap_receiver<I, O>(mut rx: Receiver<I>) -> Receiver<O>
     where
-        T: serde::Serialize<'de>,
+        O: Send + std::marker::Sync + 'static,
+        I: TryInto<O> + Send + 'static
 {
-    fn recv(&mut self) -> ByteReceiveResult {
-        boxed_async!({
-            let doc = self.recv().await?;
-            let data = doc.serialize().map_err(|| None)?;
+    let (tx, mut rx_out) = mpsc::channel(BUFSIZE);
 
+    tokio::spawn(async move {
+        while let Some(data) = rx.recv().await {
+            tx.send(data.try_into().map_err(|_| anyhow!("Could not convert data."))?).await?;
+        }
+        Ok::<(), anyhow::Error>(())
+    });
 
-            Some(data)
-        })
-    }
+    rx_out
 }
-
-pub trait DeserializeSender<'de> {
-    fn send(&self, data: &'de [u8]) -> Result<(), serde_json::Error>;
-}
-
-impl<'de, T> DeserializeSender<'de> for Sender<T>
-    where
-        T: serde::Deserialize<'de>,
-{
-    fn send(&self, data: &'de [u8]) -> Result<(), serde_json::Error> {
-        let doc = serde_json::from_slice::<T>(data)?;
-        Ok(())
-    }
-}*/
 
 struct Topic<T> {
     name: String,
@@ -149,7 +140,7 @@ struct Topic<T> {
 mod tests {
     use std::time::Duration;
     use tokio::sync::mpsc;
-    use crate::actor3::{Actor, BUFSIZE, ClockActor, SerializeReceiver, Tick};
+    use crate::actor3::{Actor, BUFSIZE, ClockActor, SerializeReceiver, Tick, wrap_receiver};
 
     #[tokio::test]
     async fn test_some_higher_order_stuff() {
@@ -185,13 +176,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_serializing_receiver() {
+    async fn test_wrap_receiver() {
         let (tx, mut rx) = mpsc::channel(BUFSIZE);
+        let mut rx = wrap_receiver(rx).await;
         let tick = Tick;
         let _ = tx.send(tick).await;
 
-        let data: Option<Vec<u8>> = SerializeReceiver::recv(&mut rx).await;
+
+        let data: Option<Vec<u8>> = rx.recv().await;
         assert!(data.is_some());
-        data.map(|data| assert_eq!(data, Vec::from("Tick".as_bytes())));
+        data.map(|data| {
+            assert_eq!(data, Vec::from("Tick".as_bytes()))
+        });
     }
 }
